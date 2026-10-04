@@ -1,0 +1,36 @@
+# ---- 构建产物（绝不提交）----
+build/
+*/build/
+.gradle/
+.cxx/
+captures/
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# ---- 本地配置（含你机器上的 SDK 绝对路径）----
+local.properties
+*.properties.bak
+
+# ---- 签名文件（泄密风险，永远不要提交）----
+*.jks
+*.keystore
+signing.properties
+
+# ---- IDE ----
+.idea/
+*.iml
+*.iws
+.vscode/
+
+# ---- 系统 ----
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- 运行时产物（App 在工作区里生成的东西）----
+*.log
+
+# ---- Kotlin 会话数据（不是源码）----
+.kotlin/

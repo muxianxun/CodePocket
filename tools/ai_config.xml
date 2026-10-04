@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<map>
+    <string name="baseUrl">http://127.0.0.1:8080/v1</string>
+    <string name="model">mock-model</string>
+    <string name="apiKey">test-key-abcdef</string>
+    <string name="systemPrompt">你是一个帮助用户在手机上写代码的助手。给出代码时请用围栏代码块，内容完整可运行。</string>
+</map>

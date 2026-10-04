@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+    <link rel="stylesheet" href="codemirror/codemirror.css"/>
+    <link rel="stylesheet" href="codemirror/theme-material-darker.css"/>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #1E1E2E;
+            -webkit-tap-highlight-color: transparent;
+        }
+        /* Same reasoning as the terminal page: do not rely on the html/body
+           height chain, it mis-resolves in some Android WebViews. */
+        #editor {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+        }
+        .CodeMirror {
+            font-family: Menlo, Consolas, "DejaVu Sans Mono", monospace;
+            font-size: 13px;
+            line-height: 1.45;
+            background: #1E1E2E;
+        }
+        .CodeMirror-gutters {
+            background: #252537;
+            border-right: 1px solid #3F3F5A;
+        }
+        .CodeMirror-linenumber {
+            color: #6B6B85;
+        }
+        .CodeMirror-cursor {
+            border-left: 2px solid #7DD3FC;
+        }
+        .CodeMirror-scroll {
+            padding-bottom: 40vh;
+        }
+        .cm-s-material-darker .CodeMirror-activeline-background {
+            background: #2E2E44;
+        }
+    </style>
+</head>
+<body>
+<div id="editor"></div>
+
+<script src="codemirror/codemirror.js"></script>
+<script src="codemirror/addon-closebrackets.js"></script>
+<script src="codemirror/addon-matchbrackets.js"></script>
+<script src="codemirror/addon-active-line.js"></script>
+<script src="codemirror/mode-clike.js"></script>
+<script src="codemirror/mode-python.js"></script>
+<script src="codemirror/mode-javascript.js"></script>
+<script src="codemirror/mode-xml.js"></script>
+<script src="codemirror/mode-shell.js"></script>
+<script src="codemirror/mode-markdown.js"></script>
+<script>
+    (function () {
+        function diag(msg) {
+            try {
+                Android.log(msg);
+            } catch (e) {
+            }
+        }
+
+        function b64ToStr(b64) {
+            var bin = atob(b64);
+            var bytes = new Uint8Array(bin.length);
+            for (var i = 0; i < bin.length; i++) {
+                bytes[i] = bin.charCodeAt(i);
+            }
+            return new TextDecoder('utf-8').decode(bytes);
+        }
+
+        function strToB64(str) {
+            var bytes = new TextEncoder().encode(str);
+            var chunk = 0x8000;
+            var parts = [];
+            for (var i = 0; i < bytes.length; i += chunk) {
+                parts.push(String.fromCharCode.apply(null, bytes.subarray(i, i + chunk)));
+            }
+            return btoa(parts.join(''));
+        }
+
+        var cm = CodeMirror(document.getElementById('editor'), {
+            value: '',
+            mode: 'clike',
+            theme: 'material-darker',
+            lineNumbers: true,
+            lineWrapping: true,
+            indentUnit: 4,
+            tabSize: 4,
+            indentWithTabs: false,
+            autoCloseBrackets: true,
+            matchBrackets: true,
+            styleActiveLine: true,
+            viewportMargin: 20
+        });
+
+        var changeTimer = null;
+        var suppressChange = false;
+
+        cm.on('change', function () {
+            if (suppressChange) {
+                return;
+            }
+            if (changeTimer) {
+                clearTimeout(changeTimer);
+            }
+            changeTimer = setTimeout(function () {
+                try {
+                    Android.onChanged(strToB64(cm.getValue()));
+                } catch (e) {
+                }
+            }, 400);
+        });
+
+        cm.setOption('extraKeys', {
+            'Ctrl-S': function () {
+                requestSave();
+            },
+            'Cmd-S': function () {
+                requestSave();
+            },
+            'Tab': function (editor) {
+                if (editor.somethingSelected()) {
+                    editor.indentSelection('add');
+                } else {
+                    editor.replaceSelection('    ', 'end');
+                }
+            }
+        });
+
+        function requestSave() {
+            try {
+                Android.commit(strToB64(cm.getValue()));
+            } catch (e) {
+            }
+        }
+
+        // Viewport units (vh) resolve to 0 in this WebView, so all sizes are
+        // applied as explicit pixels from window.innerHeight/innerWidth.
+        function ensureSize() {
+            var w = window.innerWidth || document.documentElement.clientWidth || 360;
+            var h = window.innerHeight || document.documentElement.clientHeight || 640;
+            var el = document.getElementById('editor');
+            el.style.width = w + 'px';
+            el.style.height = h + 'px';
+            var wrap = cm.getWrapperElement();
+            wrap.style.width = w + 'px';
+            wrap.style.height = h + 'px';
+        }
+
+        function applyLayout(reason) {
+            ensureSize();
+            cm.refresh();
+            if (reason) {
+                reportDims(reason);
+            }
+        }
+
+        function reportDims(reason) {
+            var el = document.getElementById('editor');
+            var wrap = cm.getWrapperElement();
+            var scroll = cm.getScrollerElement();
+            diag('dims(' + reason + ') editor=' + el.clientWidth + 'x' + el.clientHeight +
+                 ' wrapper=' + wrap.clientWidth + 'x' + wrap.clientHeight +
+                 ' scroller=' + scroll.clientWidth + 'x' + scroll.clientHeight +
+                 ' inner=' + window.innerWidth + 'x' + window.innerHeight +
+                 ' lines=' + cm.lineCount());
+        }
+
+        window.Editor = {
+            setContentB64: function (b64, mode) {
+                var text = b64ToStr(b64);
+                if (mode) {
+                    cm.setOption('mode', mode);
+                }
+                suppressChange = true;
+                cm.setValue(text);
+                cm.clearHistory();
+                cm.setCursor(0, 0);
+                applyLayout('setContent');
+                setTimeout(function () {
+                    suppressChange = false;
+                }, 150);
+                diag('setContent len=' + text.length + ' mode=' + mode);
+            },
+            getContentB64: function () {
+                return strToB64(cm.getValue());
+            },
+            setFontSize: function (px) {
+                cm.getWrapperElement().style.fontSize = px + 'px';
+                applyLayout();
+            },
+            undo: function () {
+                cm.undo();
+            },
+            redo: function () {
+                cm.redo();
+            },
+            focusEditor: function () {
+                cm.focus();
+            },
+            refresh: function () {
+                applyLayout();
+            }
+        };
+
+        setTimeout(function () {
+            applyLayout('t120');
+            try {
+                Android.onReady();
+            } catch (e) {
+            }
+            diag('editor ready');
+        }, 120);
+
+        setTimeout(function () {
+            applyLayout('t800');
+        }, 800);
+
+        window.addEventListener('resize', function () {
+            applyLayout('resize');
+        });
+    })();
+</script>
+</body>
+</html>

@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+    <link rel="stylesheet" href="xterm/xterm.css"/>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #1E1E2E;
+            -webkit-tap-highlight-color: transparent;
+            touch-action: none;
+        }
+        /* position:fixed + vh/vw does not depend on the html/body height chain,
+           which mis-resolves inside some Android WebViews. */
+        #terminal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            padding: 3px 0 0 5px;
+            box-sizing: border-box;
+            overflow: hidden;
+            touch-action: pan-y;
+        }
+        .xterm {
+            height: 100%;
+        }
+        /* xterm.css parks the helper textarea off-screen at zero size
+           (left:-9999em; width:0; height:0). Some Android WebViews then refuse to
+           open a proper editor connection, so keep it inside the viewport. */
+        .xterm .xterm-helper-textarea {
+            left: 6px !important;
+            top: 6px !important;
+            width: 2px !important;
+            height: 2px !important;
+            opacity: 0 !important;
+            z-index: -5 !important;
+        }
+        .xterm-viewport::-webkit-scrollbar {
+            width: 3px;
+        }
+        .xterm-viewport::-webkit-scrollbar-thumb {
+            background: #3F3F5A;
+            border-radius: 2px;
+        }
+    </style>
+</head>
+<body>
+<div id="terminal"></div>
+
+<script src="xterm/xterm.js"></script>
+<script src="xterm/addon-fit.js"></script>
+<script>
+    (function () {
+        function diag(msg) {
+            try {
+                Android.log(msg);
+            } catch (e) {
+            }
+        }
+
+        var term = new Terminal({
+            cursorBlink: true,
+            cursorStyle: 'bar',
+            fontSize: 15,
+            lineHeight: 1.15,
+            fontFamily: 'Menlo, Consolas, "DejaVu Sans Mono", monospace',
+            scrollback: 3000,
+            allowProposedApi: true,
+            convertEol: false,
+            // Deliberately small initial geometry: xterm's 80-column default
+            // overflows a phone viewport, which makes the WebView pan its visual
+            // viewport sideways and clips the left edge permanently.
+            cols: 24,
+            rows: 10,
+            theme: {
+                background: '#1E1E2E',
+                foreground: '#E4E4E7',
+                cursor: '#7DD3FC',
+                cursorAccent: '#1E1E2E',
+                selectionBackground: '#3F3F5A',
+                black: '#3F3F5A',
+                red: '#FF6B6B',
+                green: '#86EFAC',
+                yellow: '#FDE68A',
+                blue: '#7DD3FC',
+                magenta: '#C4B5FD',
+                cyan: '#67E8F9',
+                white: '#E4E4E7',
+                brightBlack: '#6B6B85',
+                brightRed: '#FF8A8A',
+                brightGreen: '#A7F3D0',
+                brightYellow: '#FEF08A',
+                brightBlue: '#A5E4FF',
+                brightMagenta: '#DDD6FE',
+                brightCyan: '#A5F3FC',
+                brightWhite: '#FFFFFF'
+            }
+        });
+
+        var fit = new FitAddon.FitAddon();
+        term.loadAddon(fit);
+        term.open(document.getElementById('terminal'));
+
+        var lastCols = -1, lastRows = -1;
+
+        function dims() {
+            var el = document.getElementById('terminal');
+            return {
+                w: el.clientWidth,
+                h: el.clientHeight,
+                bodyW: document.body.clientWidth,
+                bodyH: document.body.clientHeight,
+                dpr: window.devicePixelRatio || 1,
+                innerW: window.innerWidth,
+                innerH: window.innerHeight
+            };
+        }
+
+        function ensureSize() {
+            var el = document.getElementById('terminal');
+            if (el.clientHeight < 50 || el.clientWidth < 50) {
+                el.style.height = Math.max(window.innerHeight, 200) + 'px';
+                el.style.width = Math.max(window.innerWidth, 200) + 'px';
+                diag('forced size ' + el.clientWidth + 'x' + el.clientHeight +
+                     ' (inner ' + window.innerWidth + 'x' + window.innerHeight + ')');
+            }
+        }
+
+        function resetViewportPan() {
+            try {
+                window.scrollTo(0, 0);
+                document.documentElement.scrollLeft = 0;
+                document.documentElement.scrollTop = 0;
+                document.body.scrollLeft = 0;
+                document.body.scrollTop = 0;
+                var vv = window.visualViewport;
+                if (vv && (vv.offsetLeft !== 0 || vv.offsetTop !== 0)) {
+                    diag('viewport panned: ' + vv.offsetLeft + ',' + vv.offsetTop +
+                         ' scale=' + vv.scale);
+                }
+            } catch (e) {
+            }
+        }
+
+        function doFit(reason) {
+            ensureSize();
+            var d = dims();
+            try {
+                fit.fit();
+            } catch (e) {
+                diag('fit threw: ' + e);
+            }
+            resetViewportPan();
+            if (term.cols !== lastCols || term.rows !== lastRows) {
+                lastCols = term.cols;
+                lastRows = term.rows;
+                diag('fit(' + reason + ') cols=' + term.cols + ' rows=' + term.rows +
+                     ' box=' + d.w + 'x' + d.h + ' body=' + d.bodyW + 'x' + d.bodyH +
+                     ' inner=' + d.innerW + 'x' + d.innerH + ' dpr=' + d.dpr);
+            }
+        }
+
+        function focusTerm() {
+            try {
+                term.focus();
+                var ta = document.querySelector('.xterm-helper-textarea');
+                if (ta) {
+                    ta.focus();
+                }
+                diag('focus called, active=' + (document.activeElement ? document.activeElement.className : 'null'));
+            } catch (e) {
+                diag('focus threw: ' + e);
+            }
+        }
+
+        function b64ToBytes(b64) {
+            var bin = atob(b64);
+            var bytes = new Uint8Array(bin.length);
+            for (var i = 0; i < bin.length; i++) {
+                bytes[i] = bin.charCodeAt(i);
+            }
+            return bytes;
+        }
+
+        window.Terminal = {
+            writeB64: function (b64) {
+                try {
+                    term.write(b64ToBytes(b64));
+                } catch (e) {
+                }
+            },
+            clearAll: function () {
+                term.clear();
+                term.write('\u001b[2J\u001b[H');
+            },
+            reset: function () {
+                term.reset();
+                doFit('reset');
+            },
+            setFontSize: function (px) {
+                term.options.fontSize = px;
+                doFit('fontSize');
+            },
+            focusTerm: focusTerm,
+            fitNow: function () {
+                doFit('kotlin');
+            },
+            scrollBottom: function () {
+                term.scrollToBottom();
+            },
+            // Selection / clipboard helpers. Android's WebView gives file:// pages no
+            // navigator.clipboard, so the Kotlin side does the actual clipboard work and
+            // these only move text in and out of xterm.
+            getSelection: function () {
+                try {
+                    return term.getSelection() || '';
+                } catch (e) {
+                    return '';
+                }
+            },
+            getAllText: function () {
+                // Copying the whole buffer sidesteps fiddly long-press selection entirely.
+                try {
+                    var buffer = term.buffer.active;
+                    var lines = [];
+                    for (var i = 0; i < buffer.length; i++) {
+                        var line = buffer.getLine(i);
+                        if (line) lines.push(line.translateToString(true));
+                    }
+                    return lines.join('\n').replace(/\s+$/, '');
+                } catch (e) {
+                    return '';
+                }
+            },
+            selectAll: function () {
+                try {
+                    term.selectAll();
+                } catch (e) {
+                }
+            },
+            pasteText: function (text) {
+                try {
+                    term.paste(text);
+                } catch (e) {
+                }
+            }
+        };
+
+        term.onData(function (data) {
+            try {
+                Android.writeText(data);
+            } catch (e) {
+            }
+        });
+
+        // Note: text is normally typed through the native input field in
+        // TerminalScreen.kt. Inline typing here only works with IMEs that commit
+        // Latin text directly; Chinese pinyin compositions never reach the DOM in
+        // an Android WebView (verified on device).
+
+        term.onResize(function (size) {
+            try {
+                Android.resize(size.rows, size.cols);
+            } catch (e) {
+            }
+        });
+
+        // Focus handling: touch events are what actually fire on Android WebView.
+        function onTouchFocus() {
+            focusTerm();
+            try {
+                Android.onTap();
+            } catch (e) {
+            }
+        }
+
+        var host = document.getElementById('terminal');
+        host.addEventListener('touchend', onTouchFocus, {passive: true});
+        host.addEventListener('click', onTouchFocus);
+        host.addEventListener('mousedown', onTouchFocus);
+
+        window.addEventListener('resize', function () {
+            doFit('window');
+        });
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', function () {
+                doFit('visualViewport');
+            });
+        }
+        window.addEventListener('orientationchange', function () {
+            setTimeout(function () {
+                doFit('orientation');
+            }, 250);
+        });
+
+        // Measure several times: the first attempt often runs before layout settles.
+        diag('page loaded');
+        doFit('t0');
+        requestAnimationFrame(function () {
+            doFit('raf');
+        });
+        setTimeout(function () {
+            doFit('t250');
+        }, 250);
+        setTimeout(function () {
+            doFit('t800');
+            try {
+                Android.onReady(term.rows, term.cols);
+            } catch (e) {
+            }
+            diag('ready sent ' + term.cols + 'x' + term.rows);
+        }, 800);
+    })();
+</script>
+</body>
+</html>

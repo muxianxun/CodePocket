@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">掌上代码</string>
+
+    <string name="tab_files">文件</string>
+    <string name="tab_editor">编辑</string>
+    <string name="tab_terminal">终端</string>
+    <string name="tab_ai">AI</string>
+</resources>
