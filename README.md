@@ -1,27 +1,65 @@
-# 掌上代码 CodePocket v0.3
+# 掌上代码 CodePocket v0.4
 
-一个「在手机上写代码」的 Android 应用：文件管理 + 代码编辑器 + **真终端** + AI 编程助手
-+ **四种语言的开箱即用运行时（Python / Java / C / C++）**。
+一个「在手机上写代码」的 Android 应用：文件管理 + 代码编辑器 + **真终端（带包管理器）**
++ **内置浏览器** + AI 编程助手，能在设备上**真正运行 5 种语言**。
 
 已在真机（Redmi K50 Ultra / Android 17 / HyperOS / SELinux Enforcing）与 MuMu 模拟器
-（Android 15 / x86_64）上逐项实测。
+（Android 15 / x86_64）上逐项实测。**未验证的功能在本文档里都有明确标注。**
 
-## v0.3：四种语言，全部在编辑器里「编译并运行」
+## 5 种语言，全部零特权
 
-| 语言 | 机制 | 需要 root / Shizuku 吗 | 实测证据 |
-|---|---|---|---|
-| **Python** | Chaquopy 把 CPython 3.13.9 嵌进 App 进程 | ❌ | `Python.start ok in 408ms`，脚本 24ms 跑完 |
-| **Java** | **Janino** 编译 → **D8** 转 dex → 系统 `dalvikvm` 执行，前两步都在进程内 | ❌ | `JAVA_ON_ANDROID_OK` / `sum(1..10)=55` |
-| **C** | Termux clang 按需下载（15 个包 82.8 MB），靠 **targetSdk 28 的 exec 豁免**运行 | ❌ | `C_ON_ANDROID_OK` / `Clang 21.1.8` |
-| **C++** | 同上 + libc++ | ❌ | `CPP_ON_ANDROID_OK` / `std::accumulate` 正常 |
+| 语言 | 运行机制 | root / Shizuku | 图形界面 | 实测证据 |
+|---|---|---|---|---|
+| **Python** | Chaquopy 把 CPython 3.13.9 嵌进 App 进程 | ❌ | ✅ 画布（ctypes 调 `cp_*`） | `Python.start ok in 408ms`，脚本 24ms 跑完 |
+| **Java** | **Janino** 编译 → **D8** 转 dex → 系统 `dalvikvm` | ❌ | ✅ **真正的 Android 控件** | `JAVA_ON_ANDROID_OK` / `sum(1..10)=55` |
+| **C** | Termux clang 按需下载（15 包 82.8 MB），靠 **targetSdk 28 的 exec 豁免** | ❌ | ✅ 画布（`codepocket.h`） | `C_ON_ANDROID_OK` / `Clang 21.1.8` |
+| **C++** | 同上 + libc++ | ❌ | ✅ | `CPP_ON_ANDROID_OK` / `std::accumulate` 正常 |
+| **Rust** | Termux rustc 懒加载（首次运行 `.rs` 时自动装） | ❌ | ✅ cdylib + `cp_main` | 已实现，**尚未在真机端到端验证** |
 
-编辑器打开文件后，工具栏按钮会按类型自己变：`.py` 是「运行」，`.java/.c/.cpp` 是
-「编译并运行」，结果（含编译器警告与异常回溯）显示在编辑器下方。**运行前会自动保存**，
-保证跑的就是屏幕上看到的。
+编辑器打开文件后，工具栏按钮**按类型自己变**：
 
-一键装卸：`语言` 页签列出四种语言的真实状态（已就绪 / 需下载 / 部分可用）与占用体积，
-C/C++ 的工具链在那里按需下载；`检测执行权限` 按钮会现场做实验，告诉你这台设备能不能
-执行数据目录里的二进制。
+| 文件类型 | 可用按钮 |
+|---|---|
+| `.py` | 运行 · 窗口运行 |
+| `.java` | 编译并运行 · **界面运行**（DexClassLoader 载入 App 进程，用真控件建界面） |
+| `.c` / `.cpp` | 编译并运行 · 窗口运行 |
+| `.rs` | 编译并运行 · 窗口运行 |
+| `.html` / `.svg` | 预览（内置浏览器，`file://`） |
+| 任意 | 本地服务（打开 `http://127.0.0.1:8000`，接你起的后端） |
+
+**运行前自动保存**，保证跑的就是屏幕上看到的；输出（含编译器警告与异常回溯）显示在编辑器下方。
+
+## 另外三块值得一提的能力
+
+**① 终端里的包管理器**（`pkg list / search / info / install / remove / update`）
+实现方式是**文件协议**：终端是真 PTY 里跑的 `sh`，且它与 App **同 uid**，所以 `pkg` 是一个
+shell 脚本——写 `pkg.req`，App 常驻线程读走干活，把输出分块写回 `pkg.res`，脚本边等边打印。
+**没有拦截键盘输入**，因此管道、重定向、`&&` 等 shell 语义全都完好。装的是真正的 Termux
+仓库包（索引解析 + 依赖闭包 + 手写的 ar/xz/tar 解包器）。
+
+**② AI 能自己创建文件**
+用**代码块协议**而不是 OpenAI tool-calling——因为"任意 OpenAI 兼容接口"里很多根本没实现
+`tools`，而工具调用失败是**静默**的。协议长这样：
+
+````
+```file:fib.py
+def fib(n): ...
+```
+````
+
+App 解析后**直接落盘**并回报"已写入 1 个文件"；普通代码块（不带 `file:`）只显示不落盘。
+路径按**敌意输入**处理：拒绝 `..`、绝对路径、盘符、点文件，合并后还用 `canonicalPath`
+再校验一次。AI 输出还支持**流式**，流式失败会自动回退到整段返回。
+
+**③ 一套原生图形窗口 API**（`cp_open/cp_clear/cp_pixel/cp_line/cp_circle/cp_present`）
+软件渲染，不依赖 GL/EGL，任何设备都能出画面。C/C++ 用 `codepocket.h`，Python 用
+`import codepocket`，Rust 用 `extern "C"` + `#[no_mangle] pub extern "C" fn cp_main()`。
+之所以必须编译成**共享库**而不是可执行文件：Android 没有显示服务，窗口只能由 Activity 的
+Surface 提供，而独立进程拿不到 Surface。
+
+一键装卸：`语言` 页签列出每种语言的**真实状态**（现场探测，不是写死的）与占用体积，
+`检测执行权限` 按钮会**现场做实验**告诉你这台设备能不能执行数据目录里的二进制。
+
 
 ## 为什么每种语言的接法都不一样（这一节是本项目最核心的知识）
 
@@ -260,6 +298,16 @@ App 设置里填：Base URL `http://127.0.0.1:8080/v1`，模型名任意，Key �
     下载上（表现为"构建不动了"）。所以加了 `-Pabis=` 开关，可以只构建一个 ABI 快速迭代。
 
 ## 后续计划
+
+> **阅读提示**：以下是早期写下的计划，其中**多数已经完成**（C/C++ 编译、Rust 支持、
+> AI 流式输出、AI 文件写入都已落地，见文档开头）。保留原文是为了留档踩坑过程。
+>
+> **当前真正待办**：
+> 1. **AI 还看不到你打开的文件**——它只能新建文件，不能改现有的（这是最影响实用性的一条）
+> 2. **Rust 工具链的真机端到端验证**（代码已写完，未跑过）
+> 3. 终端：常用命令快捷按钮、发送后输入框保持焦点、PTY 与 xterm 尺寸同步（治"输出乱"）
+> 4. `pkg remove` 真正删除文件（现在只从已装列表移除，因为安装时没记录文件清单）
+> 5. 无线 ADB 自连模式；StatusFloat 的 FPS 指标与 arm64 构建
 
 - **C/C++ 编译**：内置 clang 走 `nativeLibraryDir` 方案（Python 已用 Chaquopy 解决，
   编译器必须真正 exec，所以仍需这个技巧）
