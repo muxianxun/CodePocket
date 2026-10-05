@@ -1,10 +1,29 @@
-# 掌上代码 CodePocket v0.4
+# 掌上代码 CodePocket
 
-一个「在手机上写代码」的 Android 应用：文件管理 + 代码编辑器 + **真终端（带包管理器）**
-+ **内置浏览器** + AI 编程助手，能在设备上**真正运行 5 种语言**。
+**在手机上写代码，并且真的能跑起来。** 文件管理 + 代码编辑器 + 真终端（带包管理器）+ 内置浏览器 + AI 助手，支持 **5 种语言**：Python / Java / C / C++ / Rust —— **全部零 root、零 Shizuku、零 ADB**。
 
-已在真机（Redmi K50 Ultra / Android 17 / HyperOS / SELinux Enforcing）与 MuMu 模拟器
-（Android 15 / x86_64）上逐项实测。**未验证的功能在本文档里都有明确标注。**
+![平台](https://img.shields.io/badge/Android-7.0%2B-3DDC84?logo=android&logoColor=white)
+![语言](https://img.shields.io/badge/%E8%AF%AD%E8%A8%80-Python%20%7C%20Java%20%7C%20C%20%7C%20C%2B%2B%20%7C%20Rust-blue)
+![版本](https://img.shields.io/badge/version-0.4.0-green)
+![许可证](https://img.shields.io/badge/license-MIT-lightgrey)
+
+![工作区](docs/06-workspace.png)
+
+| 语言运行时状态 | Python 运行 | 终端 + 包管理器 |
+|:---:|:---:|:---:|
+| ![语言管理器](docs/01-languages.png) | ![Python 运行](docs/02-python-run.png) | ![终端 pkg](docs/04-terminal-pkg.png) |
+
+> 截图取自开发过程中的真机（Redmi K50 Ultra / Android 17 / HyperOS / SELinux Enforcing）。
+> 界面仍在演进，个别细节可能与当前版本略有差异——**未验证的功能下文都有明确标注**。
+
+## 为什么它值得一看
+
+- **5 种语言是真的能跑**，不是语法高亮玩具：Python 用 Chaquopy 把 CPython 3.13.9 嵌进进程；Java 走 Janino → D8 → 系统 `dalvikvm`；C/C++/Rust 用按需下载的 Termux 工具链。
+- **零特权**：不需要 root、Shizuku 或 ADB。靠把 `targetSdk` 定为 **28** 换取旧 SELinux 域的执行豁免——**这个取舍有 A/B 实验证据**（同一 APK、同一探针：`targetSdk 34 → error=13 Permission denied`，`targetSdk 28 → 退出码 0`）。
+- **能画图**：一套原生窗口 API（**软件渲染，不依赖 GL/EGL**，任何设备都能出画面），C/C++/Rust/Python 都能开窗口。
+- **AI 能自己建文件**：用**代码块协议**而不是 OpenAI tool-calling——因为"任意 OpenAI 兼容接口"里很多根本没实现 `tools`，而工具调用失败是**静默**的。
+- **终端带包管理器**：装的是真正的 Termux 仓库包（索引解析 + 依赖闭包 + 手写的 ar/xz/tar 解包器），且**不拦截键盘输入**，管道、重定向、`&&` 等 shell 语义全都完好。
+- **一个终端、五种架构决策**：每种语言接进 Android 的方式都不一样，下文逐条记录了为什么。
 
 ## 5 种语言，全部零特权
 
