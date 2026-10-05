@@ -80,14 +80,64 @@ int main() {
 
     private fun exec(context: Context, binary: File, args: List<String>, workDir: File): String {
         val command = listOf(binary.absolutePath) + args
+        val timeoutSeconds = 15L
         return try {
             val process = ProcessBuilder(command)
                 .directory(workDir)
                 .redirectErrorStream(true)
                 .apply { environment().putAll(environment(context)) }
                 .start()
-            val output = process.inputStream.bufferedReader().readText()
-            val code = process.waitFor()
+
+            // Interactive programs are the normal case — any stdin read blocks forever while
+            // the output is being read to EOF, so the run looks "stuck" with no error at all.
+            // (Reported by a user whose Rust program waited on read_line.) Close stdin so
+            // reads see EOF, and cap the wall clock so a runaway loop still returns.
+            runCatching { process.outputStream.close() }
+
+            // Cap the captured output, not just the time. A program that loops printing (very
+            // easy to write by accident) filled the heap and killed the app with a 150 MB
+            // OutOfMemoryError *before* the timeout could fire — measured on device. Fixed-size
+            // chunk reads also stop a single enormous line from being materialised, and the pipe
+            // keeps being drained after the cap so the child never blocks on a full buffer.
+            val collected = StringBuilder()
+            var truncated = false
+            val maxChars = 256 * 1024
+            val pump = Thread {
+                runCatching {
+                    val reader = process.inputStream.bufferedReader()
+                    val chunk = CharArray(8 * 1024)
+                    while (true) {
+                        val read = reader.read(chunk)
+                        if (read < 0) break
+                        synchronized(collected) {
+                            val room = maxChars - collected.length
+                            if (room > 0) {
+                                collected.append(chunk, 0, minOf(read, room))
+                            } else if (!truncated) {
+                                truncated = true
+                                // Note it inside the buffer so both result paths show it
+                                // without duplicating the text-building code.
+                                collected.append("\n…（输出过长，已截断）\n")
+                            }
+                        }
+                    }
+                }
+            }
+            pump.isDaemon = true
+            pump.start()
+
+            val finished = process.waitFor(timeoutSeconds, java.util.concurrent.TimeUnit.SECONDS)
+            if (!finished) {
+                process.destroyForcibly()
+                pump.join(500)
+                val text = synchronized(collected) { collected.toString() }
+                return "程序在 ${timeoutSeconds} 秒内没有结束，已被强制停止。\n" +
+                    "若它是在等键盘输入，请改用「终端」运行：编辑器只捕获输出，不提供输入。\n" +
+                    "---- 已捕获的输出 ----\n$text"
+            }
+            pump.join(1000)
+            val code = process.exitValue()
+            val output = synchronized(collected) { collected.toString() }
             "退出码=$code\n$output"
         } catch (t: Throwable) {
             var cause: Throwable = t
