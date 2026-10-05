@@ -24,8 +24,8 @@ android {
         // Cost: cannot be published on Google Play, and some legacy storage behaviour is
         // retained. Both acceptable here; it buys working C/C++ with no root, no Shizuku.
         targetSdk = 28
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 4
+        versionName = "0.4.0"
 
         ndk {
             // Default ships both targets: arm64-v8a for the real phone, x86_64 for the

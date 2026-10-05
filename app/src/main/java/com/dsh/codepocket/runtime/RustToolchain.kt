@@ -57,16 +57,81 @@ fn main() {
         )
     }
 
+    /**
+     * rustc derives the crate name from the file name and refuses anything that is not a valid
+     * identifier. A file called "Hello world.rs" therefore failed with
+     *     error: invalid character ' ' in crate name: `Hello world`
+     * even though its code was valid Rust. Reproduced against the real toolchain as root: the
+     * same command plus `--crate-name Hello_world` exits 0. So never let rustc guess.
+     */
+    private fun crateNameFor(fileName: String): String {
+        val cleaned = fileName
+            .map { if (it.isLetterOrDigit() && it.code < 128) it else '_' }
+            .joinToString("")
+            .trim('_')
+        val safe = cleaned.ifEmpty { "codepocket_program" }
+        return if (safe.first().isDigit()) "_$safe" else safe
+    }
+
     private fun exec(context: Context, binary: File, args: List<String>, workDir: File): String {
         val command = listOf(binary.absolutePath) + args
+        val timeoutSeconds = 15L
         return try {
             val process = ProcessBuilder(command)
                 .directory(workDir)
                 .redirectErrorStream(true)
                 .apply { environment().putAll(environment(context)) }
                 .start()
-            val output = process.inputStream.bufferedReader().readText()
-            val code = process.waitFor()
+
+            // Close stdin (a program that calls read_line would otherwise block forever while
+            // the output is being read to EOF — no error, just a stuck "running" state) and
+            // cap the wall clock so an interactive loop still returns something useful.
+            runCatching { process.outputStream.close() }
+
+            // Cap the captured output, not just the time. A program that loops printing (very
+            // easy to write by accident) filled the heap and killed the app with a 150 MB
+            // OutOfMemoryError *before* the timeout could fire — measured on device. Fixed-size
+            // chunk reads also stop a single enormous line from being materialised, and the pipe
+            // keeps being drained after the cap so the child never blocks on a full buffer.
+            val collected = StringBuilder()
+            var truncated = false
+            val maxChars = 256 * 1024
+            val pump = Thread {
+                runCatching {
+                    val reader = process.inputStream.bufferedReader()
+                    val chunk = CharArray(8 * 1024)
+                    while (true) {
+                        val read = reader.read(chunk)
+                        if (read < 0) break
+                        synchronized(collected) {
+                            val room = maxChars - collected.length
+                            if (room > 0) {
+                                collected.append(chunk, 0, minOf(read, room))
+                            } else if (!truncated) {
+                                truncated = true
+                                // Note it inside the buffer so both result paths show it
+                                // without duplicating the text-building code.
+                                collected.append("\n…（输出过长，已截断）\n")
+                            }
+                        }
+                    }
+                }
+            }
+            pump.isDaemon = true
+            pump.start()
+
+            val finished = process.waitFor(timeoutSeconds, java.util.concurrent.TimeUnit.SECONDS)
+            if (!finished) {
+                process.destroyForcibly()
+                pump.join(500)
+                val text = synchronized(collected) { collected.toString() }
+                return "程序在 ${timeoutSeconds} 秒内没有结束，已被强制停止。\n" +
+                    "若它是在等键盘输入，请改用「终端」运行：编辑器只捕获输出，不提供输入。\n" +
+                    "---- 已捕获的输出 ----\n$text"
+            }
+            pump.join(1000)
+            val code = process.exitValue()
+            val output = synchronized(collected) { collected.toString() }
             "退出码=$code\n$output"
         } catch (t: Throwable) {
             var cause: Throwable = t
@@ -163,7 +228,12 @@ fn main() {
                 exec(
                     context,
                     compiler,
-                    listOf("-O", "-o", binary.absolutePath, source.absolutePath),
+                    listOf(
+                        "-O",
+                        "--crate-name", crateNameFor(source.nameWithoutExtension),
+                        "-o", binary.absolutePath,
+                        source.absolutePath,
+                    ),
                     work,
                 )
             }
@@ -215,6 +285,7 @@ fn main() {
                     context,
                     compiler,
                     listOf(
+                        "--crate-name", crateNameFor(source.nameWithoutExtension),
                         "--crate-type", "cdylib",
                         "-O",
                         "-o", library.absolutePath,

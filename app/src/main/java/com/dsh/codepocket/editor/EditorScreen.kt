@@ -231,58 +231,64 @@ fun EditorScreen(
             // Java gets a real Android interface instead of a canvas: the compiled dex is
             // loaded into this process, so the user's class receives a Context and can build
             // genuine views (see runtime/JavaUiHost.kt).
-            ToolButton(
-                label = "界面运行",
-                enabled = ext == "java" && !running && windowLib == null && browserUrl == null,
-            ) {
-                val target = file
-                if (target != null) {
-                    scope.launch {
-                        running = true
-                        runStatus = "正在把 ${target.name} 编译成 dex 并载入…"
-                        val result = com.dsh.codepocket.runtime.JavaUiHost.prepare(ctx, target)
-                        running = false
-                        result.fold(
-                            onSuccess = { prepared ->
-                                // Reuse the window slot: "javaui:<dex>|<class>"
-                                windowLib = "javaui:" + prepared.dex.absolutePath + "|" + prepared.className
-                                runStatus = "界面已启动 · ${prepared.className}"
-                            },
-                            onFailure = { error ->
-                                runOutput = "界面运行失败：${error.message}"
-                                runStatus = target.name
-                            },
-                        )
+            //
+            // Rendered ONLY for .java. Material3's TextButton enforces a 58dp minimum width
+            // (ButtonDefaults.MinWidth) whatever the label says, so every extra button costs
+            // ~172px on this screen; nine of them needed ~1550px on a 1220px screen and the
+            // right-most buttons were clipped off entirely, making the window/UI features
+            // unreachable. Shrinking padding or labels could not help — the floor belongs to
+            // the component. Measured on device.
+            if (ext == "java") {
+                ToolButton(
+                    label = "界面",
+                    enabled = !running && windowLib == null && browserUrl == null,
+                ) {
+                    val target = file
+                    if (target != null) {
+                        scope.launch {
+                            running = true
+                            runStatus = "正在把 ${target.name} 编译成 dex 并载入…"
+                            val result = com.dsh.codepocket.runtime.JavaUiHost.prepare(ctx, target)
+                            running = false
+                            result.fold(
+                                onSuccess = { prepared ->
+                                    // Reuse the window slot: "javaui:<dex>|<class>"
+                                    windowLib = "javaui:" + prepared.dex.absolutePath + "|" + prepared.className
+                                    runStatus = "界面已启动 · ${prepared.className}"
+                                },
+                                onFailure = { error ->
+                                    runOutput = "界面运行失败：${error.message}"
+                                    runStatus = target.name
+                                },
+                            )
+                        }
                     }
                 }
             }
-            // Preview local HTML in the built-in browser. (Android WebView needs
-            // allowFileAccess for file:// URLs; that is set in BrowserScreen.)
+            // Preview local HTML in the built-in browser. Rendered only for HTML/SVG for the
+            // same width reason as the Java button above.
             val canPreview = ext == "html" || ext == "htm" || ext == "svg"
-            ToolButton(
-                label = "预览",
-                enabled = canPreview && windowLib == null && browserUrl == null,
-            ) {
-                val target = file
-                if (target != null) {
-                    // Preview what is on disk. Use 保存 first if you just edited the file.
-                    browserUrl = "file://" + target.absolutePath
-                    runStatus = "预览 ${target.name}（已保存内容）"
+            if (canPreview) {
+                ToolButton(
+                    label = "预览",
+                    enabled = windowLib == null && browserUrl == null,
+                ) {
+                    val target = file
+                    if (target != null) {
+                        // Preview what is on disk. Use 保存 first if you just edited the file.
+                        browserUrl = "file://" + target.absolutePath
+                        runStatus = "预览 ${target.name}（已保存内容）"
+                    }
                 }
             }
-            // Jump straight to a local backend. The user starts the server with 运行
-            // (e.g. a Python http.server script) and opens it here.
-            ToolButton(
-                label = "本地服务",
-                enabled = browserUrl == null && windowLib == null,
-            ) {
-                browserUrl = "http://127.0.0.1:8000"
-                runStatus = "打开本地服务 http://127.0.0.1:8000"
-            }
+            // Removed the "本地服务" button: a toolbar with up to eight buttons overflowed the
+            // screen and pushed the window/UI buttons off it (verified on device), and the
+            // built-in browser has its own address bar, so the shortcut added nothing.
             val canWindow = ext == "c" || ext == "cpp" || ext == "cc" || ext == "cxx" ||
                 ext == "py" || ext == "rs"
-            ToolButton(
-                label = "窗口运行",
+            if (canWindow) {
+                ToolButton(
+                label = "窗口",
                 enabled = canWindow && !running && windowLib == null,
             ) {
                 val target = file
@@ -321,6 +327,7 @@ fun EditorScreen(
                         }
                     }
                 }
+            }
             }
         }
 
@@ -441,9 +448,13 @@ private fun ToolButton(label: String, enabled: Boolean = true, onClick: () -> Un
     TextButton(
         onClick = onClick,
         enabled = enabled,
-        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-        modifier = Modifier.height(30.dp),
+        // Tight padding + 11sp on purpose: a .rs/.c/.py/.java file now shows up to seven of
+        // these (撤销 重做 A- A+ 保存 + two run buttons) and the row overflowed the screen —
+        // the right-most button was clipped down to a single half-visible character, which
+        // made the window/UI/browser features unreachable. Verified on device.
+        contentPadding = PaddingValues(horizontal = 3.dp, vertical = 0.dp),
+        modifier = Modifier.height(28.dp),
     ) {
-        Text(text = label, fontSize = 12.sp)
+        Text(text = label, fontSize = 11.sp, maxLines = 1)
     }
 }

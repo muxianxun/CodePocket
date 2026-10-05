@@ -264,10 +264,9 @@ fun TerminalScreen(workDir: String, modifier: Modifier = Modifier) {
                     }
                 }
             }
-            ToolbarButton("选中") {
-                webView?.evaluateJavascript("window.Terminal.selectAll()", null)
-                status = "已全选；点「复制」复制整屏"
-            }
+            // "选中" was removed: the toolbar had eight buttons and overflowed the screen
+            // (same defect as the editor's toolbar), and "复制" already copies the whole
+            // buffer, so selection is never required.
             ToolbarButton("粘贴") {
                 runCatching {
                     val clipboard = pkgContext

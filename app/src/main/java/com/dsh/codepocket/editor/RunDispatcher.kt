@@ -35,7 +35,9 @@ object RunDispatcher {
     /** Only Python can be interpreted directly; everything else needs a compile step. */
     fun buttonLabel(ext: String): String = when {
         ext in PYTHON -> "运行"
-        supports(ext) -> "编译并运行"
+        // Kept to two characters: the toolbar shows up to eight buttons and longer labels
+        // pushed the window/UI buttons off the screen (verified on device).
+        supports(ext) -> "运行"
         else -> "运行"
     }
 
