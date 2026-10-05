@@ -9,9 +9,9 @@
 
 ![工作区](docs/06-workspace.png)
 
-| 语言运行时状态 | Python 运行 | 终端 + 包管理器 |
-|:---:|:---:|:---:|
-| ![语言管理器](docs/01-languages.png) | ![Python 运行](docs/02-python-run.png) | ![终端 pkg](docs/04-terminal-pkg.png) |
+| 语言运行时状态 | Python 运行 |
+|:---:|:---:|
+| ![语言管理器](docs/01-languages.png) | ![Python 运行](docs/02-python-run.png) |
 
 > 截图取自开发过程中的真机（Redmi K50 Ultra / Android 17 / HyperOS / SELinux Enforcing）。
 > 界面仍在演进，个别细节可能与当前版本略有差异——**未验证的功能下文都有明确标注**。
