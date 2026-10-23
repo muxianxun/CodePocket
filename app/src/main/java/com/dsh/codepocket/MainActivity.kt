@@ -11,6 +11,7 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Memory
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -31,6 +32,8 @@ import androidx.compose.ui.unit.sp
 import com.dsh.codepocket.ai.AiScreen
 import com.dsh.codepocket.ai.AiSettings
 import com.dsh.codepocket.ai.AiUiState
+import com.dsh.codepocket.account.AccountScreen
+import com.dsh.codepocket.account.AccountUiState
 import com.dsh.codepocket.editor.EditorScreen
 import com.dsh.codepocket.files.FileRepository
 import com.dsh.codepocket.files.FilesScreen
@@ -67,6 +70,7 @@ enum class AppTab(val label: String, val icon: ImageVector) {
     TERMINAL("终端", Icons.Filled.Terminal),
     LANGS("语言", Icons.Filled.Memory),
     AI("AI", Icons.Filled.AutoAwesome),
+    ACCOUNT("我的", Icons.Filled.Person),
 }
 
 @Composable
@@ -83,6 +87,7 @@ fun AppRoot() {
     val repo = remember { FileRepository(workspace) }
     val aiSettings = remember { AiSettings(context) }
     val aiState = remember { AiUiState() }
+    val accountState = remember { AccountUiState() }
 
     var openFile by remember { mutableStateOf<File?>(null) }
 
@@ -142,6 +147,8 @@ fun AppRoot() {
                         )
                     },
                 )
+
+                AppTab.ACCOUNT -> AccountScreen(state = accountState)
             }
         }
     }

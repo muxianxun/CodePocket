@@ -18,7 +18,15 @@ class CodePocketApp : Application() {
         super.onCreate()
         Diag.init(this)
         Diag.clear()
-        Diag.log("app", "onCreate v0.2.0 sdk=${android.os.Build.VERSION.SDK_INT}")
+        // Read the real version instead of hardcoding it. The hardcoded "v0.2.0" stayed in the
+        // log after versionName moved to 0.4.0, and it led to two opposite wrong conclusions
+        // while debugging a device install. A lying diagnostic is worse than none.
+        // PackageManager is used rather than BuildConfig because AGP 8 does not generate
+        // BuildConfig unless buildFeatures.buildConfig is switched on.
+        val version = runCatching {
+            packageManager.getPackageInfo(packageName, 0).versionName
+        }.getOrNull() ?: "?"
+        Diag.log("app", "onCreate v$version sdk=${android.os.Build.VERSION.SDK_INT}")
 
         val started = System.currentTimeMillis()
         try {
