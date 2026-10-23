@@ -5,8 +5,6 @@ build/
 .cxx/
 captures/
 *.apk
-# 例外：随仓库分发的成品安装包（用户要求放进仓库）
-!APK/*.apk
 *.aab
 *.ap_
 *.dex
